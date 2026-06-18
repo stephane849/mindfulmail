@@ -1,0 +1,4 @@
+-keep class ca.lght.mindfulmail.** { *; }
+-keepattributes *Annotation*
+-dontwarn javax.mail.**
+-dontwarn com.sun.mail.**
