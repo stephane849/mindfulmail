@@ -18,6 +18,4 @@ data class Message(
     val isEncrypted: Boolean = false,
 )
 
-data class EmailAddress(val name: String?, val address: String) {
-    override fun toString(): String = if (name != null) "$name <$address>" else address
-}
+// EmailAddress is defined in EmailAddress.kt
