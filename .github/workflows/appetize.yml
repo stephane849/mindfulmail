@@ -4,6 +4,15 @@ on:
   push:
     branches: [main, "claude/*"]
   workflow_dispatch:
+    inputs:
+      appetize_token:
+        description: 'Appetize API token (one-time use; set APPETIZE_API_TOKEN secret after first run)'
+        required: false
+        type: string
+      appetize_public_key:
+        description: 'Existing Appetize public key to update (leave blank to create new)'
+        required: false
+        type: string
 
 jobs:
   build-and-deploy:
@@ -43,15 +52,18 @@ jobs:
           retention-days: 14
 
       - name: Upload to Appetize.io
-        if: env.APPETIZE_API_TOKEN != ''
         env:
-          APPETIZE_API_TOKEN: ${{ secrets.APPETIZE_API_TOKEN }}
-          APPETIZE_PUBLIC_KEY: ${{ secrets.APPETIZE_PUBLIC_KEY }}
+          APPETIZE_API_TOKEN: ${{ inputs.appetize_token || secrets.APPETIZE_API_TOKEN }}
+          APPETIZE_PUBLIC_KEY: ${{ inputs.appetize_public_key || secrets.APPETIZE_PUBLIC_KEY }}
         run: |
+          if [ -z "$APPETIZE_API_TOKEN" ]; then
+            echo "No Appetize token provided — skipping upload."
+            exit 0
+          fi
+
           APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
 
           if [ -n "$APPETIZE_PUBLIC_KEY" ]; then
-            # Update existing app
             echo "Updating existing Appetize app ($APPETIZE_PUBLIC_KEY)..."
             RESPONSE=$(curl -sf \
               -X POST "https://api.appetize.io/v1/apps/$APPETIZE_PUBLIC_KEY" \
@@ -59,7 +71,6 @@ jobs:
               -F "file=@$APK_PATH" \
               -F "platform=android")
           else
-            # Create new app
             echo "Creating new Appetize app..."
             RESPONSE=$(curl -sf \
               -X POST "https://api.appetize.io/v1/apps" \
@@ -69,17 +80,16 @@ jobs:
           fi
 
           PUBLIC_KEY=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['publicKey'])")
-          EMBED_URL="https://appetize.io/embed/$PUBLIC_KEY?device=pixel7&osVersion=33"
           APP_URL="https://appetize.io/app/$PUBLIC_KEY?device=pixel7&osVersion=33"
 
           echo "### Appetize Preview" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Public key:** \`$PUBLIC_KEY\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Run in browser:** $APP_URL" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Save the public key as the \`APPETIZE_PUBLIC_KEY\` secret to update the same app on future pushes." >> $GITHUB_STEP_SUMMARY
+          echo "**Public key:** \`$PUBLIC_KEY\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Add these as repo secrets to enable auto-deploy on future pushes:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`APPETIZE_API_TOKEN\` = your token" >> $GITHUB_STEP_SUMMARY
+          echo "- \`APPETIZE_PUBLIC_KEY\` = \`$PUBLIC_KEY\`" >> $GITHUB_STEP_SUMMARY
 
-          echo "appetize_public_key=$PUBLIC_KEY" >> $GITHUB_OUTPUT
-          echo "appetize_url=$APP_URL" >> $GITHUB_OUTPUT
           echo "Appetize URL: $APP_URL"
