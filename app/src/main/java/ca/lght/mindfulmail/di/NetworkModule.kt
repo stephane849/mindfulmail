@@ -1,10 +1,14 @@
 package ca.lght.mindfulmail.di
 
+import android.content.Context
 import ca.lght.mindfulmail.data.remote.imap.ImapMailProvider
 import ca.lght.mindfulmail.data.remote.proton.ProtonMailProvider
+import ca.lght.mindfulmail.data.remote.proton.api.ProtonApiClient
+import ca.lght.mindfulmail.data.remote.proton.auth.ProtonSessionStore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.android.Android
@@ -36,8 +40,23 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideProtonMailProvider(httpClient: HttpClient): ProtonMailProvider =
-        ProtonMailProvider(httpClient)
+    fun provideProtonSessionStore(
+        @ApplicationContext context: Context,
+    ): ProtonSessionStore = ProtonSessionStore(context)
+
+    @Provides
+    @Singleton
+    fun provideProtonApiClient(
+        httpClient: HttpClient,
+        sessionStore: ProtonSessionStore,
+    ): ProtonApiClient = ProtonApiClient(httpClient, sessionStore)
+
+    @Provides
+    @Singleton
+    fun provideProtonMailProvider(
+        apiClient: ProtonApiClient,
+        sessionStore: ProtonSessionStore,
+    ): ProtonMailProvider = ProtonMailProvider(apiClient, sessionStore)
 
     @Provides
     @Singleton
