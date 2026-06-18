@@ -4,6 +4,7 @@ import android.util.Base64
 import java.math.BigInteger
 import java.security.MessageDigest
 import java.security.SecureRandom
+import org.mindrot.jbcrypt.BCrypt
 
 /**
  * Proton SRP-3000 authentication helper.
@@ -66,27 +67,49 @@ object ProtonSrp {
     }
 
     /**
+     * BCrypt's custom base64 alphabet — same bit layout as standard base64 but different
+     * character table, no padding. Used to derive the bcrypt salt from Proton's server salt.
+     */
+    private fun bcryptBase64Encode(data: ByteArray): String {
+        val table = "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        val sb = StringBuilder()
+        var i = 0
+        while (i < data.size) {
+            val c1 = data[i].toInt() and 0xFF
+            sb.append(table[c1 ushr 2])
+            var carry = (c1 and 0x03) shl 4
+            if (i + 1 >= data.size) { sb.append(table[carry]); break }
+            val c2 = data[i + 1].toInt() and 0xFF
+            carry = carry or (c2 ushr 4)
+            sb.append(table[carry])
+            carry = (c2 and 0x0f) shl 2
+            if (i + 2 >= data.size) { sb.append(table[carry]); break }
+            val c3 = data[i + 2].toInt() and 0xFF
+            sb.append(table[carry or (c3 ushr 6)])
+            sb.append(table[c3 and 0x3f])
+            i += 3
+        }
+        return sb.toString()
+    }
+
+    /**
      * Hash the user's password according to Proton's auth version scheme.
      *
-     * Version 4 (current): BCrypt(SHA512(password), bcryptSalt) where bcryptSalt is
-     * derived from the Proton salt. This requires the proton-crypto / bcrypt library.
-     *
-     * Version 0 (legacy): plain SHA512 of password bytes.
-     *
-     * @throws NotImplementedError for version 4 until the BCrypt integration is complete.
+     * Versions 3 & 4 (current): BCrypt the password with a salt derived from the
+     * Proton server salt using BCrypt's custom base64 alphabet.
+     * Version 0 (legacy): plain SHA-512 of the password.
      */
-    @Suppress("UNUSED_PARAMETER")
-    private fun hashPassword(password: String, salt: ByteArray, version: Int): ByteArray {
-        return when (version) {
+    private fun hashPassword(password: String, salt: ByteArray, version: Int): ByteArray =
+        when (version) {
             0 -> sha512(password.toByteArray(Charsets.UTF_8))
-            else -> throw NotImplementedError(
-                "SRP: full BCrypt password hashing (version $version) requires the " +
-                "proton-crypto library. See Phase 2 integration notes. " +
-                "Integrate the `com.proton.gopenpgp:android-lib` artifact and delegate " +
-                "password hashing to its SrpAuth helper before this path is reachable.",
-            )
+            3, 4 -> {
+                // Proton derives the bcrypt salt by BCrypt-base64 encoding the server salt,
+                // taking the first 22 chars, and prepending the $2y$10$ cost prefix.
+                val bcryptSalt = "\$2y\$10\$${bcryptBase64Encode(salt).take(22)}"
+                BCrypt.hashpw(password, bcryptSalt).toByteArray(Charsets.UTF_8)
+            }
+            else -> throw IllegalArgumentException("Unsupported SRP auth version: $version")
         }
-    }
 
     /**
      * Generate SRP client ephemeral and proof values.
@@ -108,21 +131,16 @@ object ProtonSrp {
         modulus: String,
         serverEphemeral: String,
     ): ProtonSrpProofs {
-        val saltBytes = Base64.decode(modulus.trim(), Base64.DEFAULT)
-        val modulusBytes = Base64.decode(modulus.trim(), Base64.DEFAULT)
+        val saltBytes = Base64.decode(salt.trim(), Base64.DEFAULT)
         val B = BigInteger(1, Base64.decode(serverEphemeral.trim(), Base64.DEFAULT))
 
-        // Use N from the modulus bytes (Proton sends its own modulus, not the RFC prime)
-        // but the group is still the same prime N — use our constant.
         val nBytes = bigIntToBytes(N)
         val nLen = nBytes.size
 
-        // Password hash — delegates to version-specific logic
-        val rawSaltBytes = Base64.decode(salt.trim(), Base64.DEFAULT)
-        val passwordHash = hashPassword(password, rawSaltBytes, version)
+        val passwordHash = hashPassword(password, saltBytes, version)
 
         // x = H(salt || passwordHash)  — Proton's variant
-        val x = BigInteger(1, sha512(rawSaltBytes, passwordHash))
+        val x = BigInteger(1, sha512(saltBytes, passwordHash))
 
         // Generate random client secret a (256-bit is plenty, N is 2048-bit)
         val secureRandom = SecureRandom()
@@ -153,7 +171,7 @@ object ProtonSrp {
         val hUser = sha512(username.lowercase().toByteArray(Charsets.UTF_8))
         val hS = sha512(bigIntToBytes(S))
 
-        val m1 = sha512(hNxorHG, hUser, rawSaltBytes, aPadded, bPadded, hS)
+        val m1 = sha512(hNxorHG, hUser, saltBytes, aPadded, bPadded, hS)
 
         // M2 = H(A || M1 || H(S))
         val m2 = sha512(aPadded, m1, hS)

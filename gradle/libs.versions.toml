@@ -15,6 +15,7 @@ mmd = "0.1.0"
 coroutines = "1.8.0"
 lifecycle = "2.7.0"
 jakarta-mail = "1.6.7"
+jbcrypt = "0.4"
 
 [libraries]
 # Compose BOM
@@ -70,6 +71,9 @@ mmd = { group = "com.github.mudita", name = "MMD", version.ref = "mmd" }
 # Jakarta Mail (Android port)
 jakarta-mail = { group = "com.sun.mail", name = "android-mail", version.ref = "jakarta-mail" }
 jakarta-activation = { group = "com.sun.mail", name = "android-activation", version.ref = "jakarta-mail" }
+
+# BCrypt (for Proton SRP password hashing)
+jbcrypt = { group = "org.mindrot", name = "jbcrypt", version.ref = "jbcrypt" }
 
 # Kotlin serialization
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version = "1.6.3" }

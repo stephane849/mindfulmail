@@ -111,4 +111,7 @@ dependencies {
     // Jakarta Mail (Android port)
     implementation(libs.jakarta.mail)
     implementation(libs.jakarta.activation)
+
+    // BCrypt (Proton SRP password hashing)
+    implementation(libs.jbcrypt)
 }
