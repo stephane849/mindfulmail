@@ -105,9 +105,6 @@ dependencies {
     // Kotlinx Serialization
     implementation(libs.kotlinx.serialization.json)
 
-    // MMD (Mudita E Ink library)
-    implementation(libs.mmd)
-
     // Jakarta Mail (Android port)
     implementation(libs.jakarta.mail)
     implementation(libs.jakarta.activation)
