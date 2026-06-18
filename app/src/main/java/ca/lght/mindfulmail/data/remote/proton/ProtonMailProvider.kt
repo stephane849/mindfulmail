@@ -4,10 +4,22 @@ import ca.lght.mindfulmail.data.remote.proton.api.ProtonApiClient
 import ca.lght.mindfulmail.data.remote.proton.api.ProtonAuthException
 import ca.lght.mindfulmail.data.remote.proton.auth.ProtonSessionStore
 import ca.lght.mindfulmail.data.remote.proton.auth.ProtonSrp
+import ca.lght.mindfulmail.data.remote.proton.crypto.ProtonCryptoHelper
 import ca.lght.mindfulmail.data.remote.proton.model.AuthRequest
+import ca.lght.mindfulmail.data.remote.proton.model.ProtonAddressPackage
+import ca.lght.mindfulmail.data.remote.proton.model.ProtonConversation
+import ca.lght.mindfulmail.data.remote.proton.model.ProtonDraftBody
+import ca.lght.mindfulmail.data.remote.proton.model.ProtonDraftRequest
+import ca.lght.mindfulmail.data.remote.proton.model.ProtonEmailAddress
+import ca.lght.mindfulmail.data.remote.proton.model.ProtonMessageDetail
+import ca.lght.mindfulmail.data.remote.proton.model.ProtonMessageSummary
+import ca.lght.mindfulmail.data.remote.proton.model.ProtonSendPackage
+import ca.lght.mindfulmail.data.remote.proton.model.ProtonSendRequest
 import ca.lght.mindfulmail.domain.model.Account
 import ca.lght.mindfulmail.domain.model.AccountType
+import ca.lght.mindfulmail.domain.model.Attachment
 import ca.lght.mindfulmail.domain.model.Conversation
+import ca.lght.mindfulmail.domain.model.EmailAddress
 import ca.lght.mindfulmail.domain.model.Label
 import ca.lght.mindfulmail.domain.model.LabelType
 import ca.lght.mindfulmail.domain.model.Message
@@ -26,7 +38,10 @@ import javax.inject.Inject
  * - Session persistence via [ProtonSessionStore].
  * - Labels/folders fetch so the inbox screen can populate its folder list.
  *
- * Phase 3 will implement message sync, conversation fetch, send, etc.
+ * Phase 3 implements:
+ * - Conversation fetch via event-loop-based sync.
+ * - Full message fetch with PGP decryption via [ProtonCryptoHelper].
+ * - Mark as read/unread, move to label, delete, send (simplified cleartext for Phase 3).
  *
  * References:
  * - Proton API: https://protonmail.com/blog/security-updates-2018/
@@ -35,6 +50,7 @@ import javax.inject.Inject
 class ProtonMailProvider @Inject constructor(
     private val apiClient: ProtonApiClient,
     private val sessionStore: ProtonSessionStore,
+    private val cryptoHelper: ProtonCryptoHelper,
 ) : MailProvider {
 
     // ── Auth ─────────────────────────────────────────────────────────────────
@@ -50,6 +66,7 @@ class ProtonMailProvider @Inject constructor(
      * 3. POST /auth — exchange proofs for access/refresh tokens.
      * 4. Verify the server proof matches our expected value.
      * 5. Persist the session and return the [Account].
+     * 6. Fetch user keys and load the primary private key into [ProtonCryptoHelper].
      */
     override suspend fun login(credentials: MailCredentials): Result<Account> {
         if (credentials !is MailCredentials.ProtonCredentials) {
@@ -105,6 +122,17 @@ class ProtonMailProvider @Inject constructor(
                 userId = authResponse.userId,
             )
 
+            // Step 6: load user keys into crypto helper
+            val keysResponse = apiClient.getUserKeys()
+            val primaryKey = keysResponse.keys.firstOrNull { it.primary == 1 }
+                ?: keysResponse.keys.firstOrNull { it.active == 1 }
+            primaryKey?.let { key ->
+                runCatching {
+                    cryptoHelper.loadPrivateKey(key.privateKey, credentials.password)
+                }
+                // Non-fatal if key loading fails — decryption will fall back to returning raw body
+            }
+
             // Fetch user profile for the Account
             val userResponse = apiClient.getUser()
             val user = userResponse.user
@@ -118,6 +146,7 @@ class ProtonMailProvider @Inject constructor(
     }
 
     override suspend fun logout() {
+        cryptoHelper.clearKey()
         sessionStore.clearSession()
     }
 
@@ -161,34 +190,105 @@ class ProtonMailProvider @Inject constructor(
         }
     }
 
-    // ── Phase 3 (not yet implemented) ────────────────────────────────────────
+    // ── Phase 3 ──────────────────────────────────────────────────────────────
 
     override suspend fun getConversations(labelId: String, page: Int): Result<List<Conversation>> =
-        Result.failure(NotImplementedError("ProtonMailProvider: getConversations not yet implemented — see Phase 3"))
+        runCatching {
+            val response = apiClient.getConversations(labelId, page)
+            response.conversations.map { it.toDomain() }
+        }
 
     override suspend fun getMessage(id: String): Result<Message> =
-        Result.failure(NotImplementedError("ProtonMailProvider: getMessage not yet implemented — see Phase 3"))
+        runCatching {
+            val response = apiClient.getMessageDetail(id)
+            val decryptedBody = cryptoHelper.decryptBody(response.message.body)
+            response.message.toDomain(decryptedBody)
+        }
 
     override suspend fun getMessagesInConversation(conversationId: String): Result<List<Message>> =
-        Result.failure(NotImplementedError("ProtonMailProvider: getMessagesInConversation not yet implemented — see Phase 3"))
+        runCatching {
+            val response = apiClient.getMessagesInConversation(conversationId)
+            // Summaries don't contain body — return without decryption
+            response.messages.map { it.toSummaryDomain() }
+        }
 
     override suspend fun markAsRead(messageIds: List<String>): Result<Unit> =
-        Result.failure(NotImplementedError("ProtonMailProvider: markAsRead not yet implemented — see Phase 3"))
+        runCatching { apiClient.markMessagesRead(messageIds) }
 
     override suspend fun markAsUnread(messageIds: List<String>): Result<Unit> =
-        Result.failure(NotImplementedError("ProtonMailProvider: markAsUnread not yet implemented — see Phase 3"))
+        runCatching { apiClient.markMessagesUnread(messageIds) }
 
     override suspend fun moveToLabel(messageIds: List<String>, labelId: String): Result<Unit> =
-        Result.failure(NotImplementedError("ProtonMailProvider: moveToLabel not yet implemented — see Phase 3"))
+        runCatching { apiClient.labelMessages(labelId, messageIds) }
 
     override suspend fun deleteMessages(messageIds: List<String>): Result<Unit> =
-        Result.failure(NotImplementedError("ProtonMailProvider: deleteMessages not yet implemented — see Phase 3"))
+        runCatching { apiClient.deleteMessages(messageIds) }
 
     override suspend fun sendMessage(draft: MessageDraft): Result<Unit> =
-        Result.failure(NotImplementedError("ProtonMailProvider: sendMessage not yet implemented — see Phase 3"))
+        runCatching {
+            // Phase 3: simplified send — create draft then send without per-recipient encryption.
+            // Full per-recipient PGP key lookup and encryption will be added in Phase 4.
+            val user = apiClient.getUser().user
+            val draftRequest = ProtonDraftRequest(
+                message = ProtonDraftBody(
+                    subject = draft.subject,
+                    sender = ProtonEmailAddress(
+                        name = user.displayName,
+                        address = user.email ?: "${user.name}@proton.me",
+                    ),
+                    toList = draft.to.map { ProtonEmailAddress(it.name ?: "", it.address) },
+                    ccList = draft.cc.map { ProtonEmailAddress(it.name ?: "", it.address) },
+                    bccList = draft.bcc.map { ProtonEmailAddress(it.name ?: "", it.address) },
+                    body = draft.body,
+                    mimeType = "text/plain",
+                ),
+            )
+            val draftResponse = apiClient.createDraft(draftRequest)
+            val draftId = draftResponse.message.id
+
+            // Send with a single cleartext package (Type=2) — works for external recipients.
+            // For internal Proton recipients, Type=1 with encrypted body key packet is needed (Phase 4).
+            val sendRequest = ProtonSendRequest(
+                packages = listOf(
+                    ProtonSendPackage(
+                        addresses = draft.to.associate { recipient ->
+                            recipient.address to ProtonAddressPackage(type = 2)
+                        },
+                        mimeType = "text/plain",
+                        body = draft.body,
+                    )
+                )
+            )
+            apiClient.sendDraft(draftId, sendRequest)
+        }
 
     override suspend fun sync(): Result<SyncResult> =
-        Result.failure(NotImplementedError("ProtonMailProvider: sync not yet implemented — see Phase 3"))
+        runCatching {
+            // Event-loop based sync using Proton's /core/v4/events/{eventId} endpoint.
+            // Fetches the latest event ID on first sync, then processes deltas.
+            val latestEventId = apiClient.getLatestEventId().eventId
+            var currentEventId = latestEventId
+            var newMessages = 0
+            var updatedMessages = 0
+            var more = true
+
+            while (more) {
+                val eventResponse = apiClient.getEvents(currentEventId)
+
+                eventResponse.messages?.forEach { event ->
+                    when (event.action) {
+                        0 -> { /* delete — handled by repository */ }
+                        1 -> newMessages++
+                        2, 3 -> updatedMessages++
+                    }
+                }
+
+                currentEventId = eventResponse.eventId
+                more = eventResponse.more == 1
+            }
+
+            SyncResult(newMessages = newMessages, updatedMessages = updatedMessages)
+        }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -216,3 +316,51 @@ class ProtonMailProvider @Inject constructor(
         return bodyLines.joinToString("").trim()
     }
 }
+
+// ── Private extension functions ───────────────────────────────────────────────
+
+private fun ProtonConversation.toDomain() = Conversation(
+    id = id,
+    subject = subject,
+    senders = senders.map { EmailAddress(it.name.ifBlank { null }, it.address) },
+    numMessages = numMessages,
+    numUnread = numUnread,
+    latestTimestamp = time,
+    labelIds = labelIds,
+    isStarred = labelIds.contains("10"),  // Proton Starred label ID
+)
+
+private fun ProtonMessageDetail.toDomain(decryptedBody: String) = Message(
+    id = id,
+    conversationId = conversationId,
+    subject = subject,
+    sender = EmailAddress(sender.name.ifBlank { null }, sender.address),
+    recipients = toList.map { EmailAddress(it.name.ifBlank { null }, it.address) },
+    ccRecipients = ccList.map { EmailAddress(it.name.ifBlank { null }, it.address) },
+    bccRecipients = bccList.map { EmailAddress(it.name.ifBlank { null }, it.address) },
+    body = decryptedBody,
+    bodyMimeType = mimeType,
+    timestamp = time,
+    isRead = unread == 0,
+    isStarred = starred == 1,
+    labelIds = labelIds,
+    attachments = attachments.map { Attachment(it.id, it.name, it.mimeType, it.size, true) },
+    isEncrypted = true,
+)
+
+private fun ProtonMessageSummary.toSummaryDomain() = Message(
+    id = id,
+    conversationId = conversationId,
+    subject = subject,
+    sender = EmailAddress(sender.name.ifBlank { null }, sender.address),
+    recipients = toList.map { EmailAddress(it.name.ifBlank { null }, it.address) },
+    ccRecipients = ccList.map { EmailAddress(it.name.ifBlank { null }, it.address) },
+    bccRecipients = bccList.map { EmailAddress(it.name.ifBlank { null }, it.address) },
+    body = "",  // not available in summary — call getMessage() for full body
+    bodyMimeType = mimeType,
+    timestamp = time,
+    isRead = unread == 0,
+    isStarred = starred == 1,
+    labelIds = labelIds,
+    isEncrypted = true,
+)

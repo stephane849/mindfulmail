@@ -5,6 +5,7 @@ import ca.lght.mindfulmail.data.remote.imap.ImapMailProvider
 import ca.lght.mindfulmail.data.remote.proton.ProtonMailProvider
 import ca.lght.mindfulmail.data.remote.proton.api.ProtonApiClient
 import ca.lght.mindfulmail.data.remote.proton.auth.ProtonSessionStore
+import ca.lght.mindfulmail.data.remote.proton.crypto.ProtonCryptoHelper
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -53,10 +54,15 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideProtonCryptoHelper(): ProtonCryptoHelper = ProtonCryptoHelper()
+
+    @Provides
+    @Singleton
     fun provideProtonMailProvider(
         apiClient: ProtonApiClient,
         sessionStore: ProtonSessionStore,
-    ): ProtonMailProvider = ProtonMailProvider(apiClient, sessionStore)
+        cryptoHelper: ProtonCryptoHelper,
+    ): ProtonMailProvider = ProtonMailProvider(apiClient, sessionStore, cryptoHelper)
 
     @Provides
     @Singleton
