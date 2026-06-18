@@ -48,6 +48,12 @@ class ProtonSessionStore @Inject constructor(
         return ProtonSession(uid, accessToken, refreshToken, userId)
     }
 
+    fun saveEventId(eventId: String) {
+        prefs.edit().putString(KEY_EVENT_ID, eventId).apply()
+    }
+
+    fun getEventId(): String? = prefs.getString(KEY_EVENT_ID, null)
+
     fun clearSession() {
         prefs.edit().clear().apply()
     }
@@ -57,6 +63,7 @@ class ProtonSessionStore @Inject constructor(
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_REFRESH_TOKEN = "refresh_token"
         private const val KEY_USER_ID = "user_id"
+        private const val KEY_EVENT_ID = "event_id"
     }
 }
 

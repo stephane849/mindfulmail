@@ -3,6 +3,12 @@ package ca.lght.mindfulmail.data.remote.proton.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/** Common interface for all Proton API responses that carry a Code and optional Error. */
+interface ProtonResponse {
+    val code: Int
+    val error: String?
+}
+
 // Auth step 1 — POST /auth/info
 @Serializable
 data class AuthInfoRequest(
@@ -11,13 +17,14 @@ data class AuthInfoRequest(
 
 @Serializable
 data class AuthInfoResponse(
-    @SerialName("Code") val code: Int,
-    @SerialName("Modulus") val modulus: String,
-    @SerialName("ServerEphemeral") val serverEphemeral: String,
-    @SerialName("Version") val version: Int,
-    @SerialName("Salt") val salt: String,
-    @SerialName("SRPSession") val srpSession: String,
-)
+    @SerialName("Code") override val code: Int,
+    @SerialName("Error") override val error: String? = null,
+    @SerialName("Modulus") val modulus: String = "",
+    @SerialName("ServerEphemeral") val serverEphemeral: String = "",
+    @SerialName("Version") val version: Int = 0,
+    @SerialName("Salt") val salt: String = "",
+    @SerialName("SRPSession") val srpSession: String = "",
+) : ProtonResponse
 
 // Auth step 2 — POST /auth
 @Serializable
@@ -30,21 +37,23 @@ data class AuthRequest(
 
 @Serializable
 data class AuthResponse(
-    @SerialName("Code") val code: Int,
-    @SerialName("AccessToken") val accessToken: String,
-    @SerialName("TokenType") val tokenType: String,
-    @SerialName("UID") val uid: String,
-    @SerialName("RefreshToken") val refreshToken: String,
-    @SerialName("ServerProof") val serverProof: String,
-    @SerialName("UserID") val userId: String,
-)
+    @SerialName("Code") override val code: Int,
+    @SerialName("Error") override val error: String? = null,
+    @SerialName("AccessToken") val accessToken: String = "",
+    @SerialName("TokenType") val tokenType: String = "",
+    @SerialName("UID") val uid: String = "",
+    @SerialName("RefreshToken") val refreshToken: String = "",
+    @SerialName("ServerProof") val serverProof: String = "",
+    @SerialName("UserID") val userId: String = "",
+) : ProtonResponse
 
 // User info — GET /core/v4/users
 @Serializable
 data class ProtonUserResponse(
-    @SerialName("Code") val code: Int,
+    @SerialName("Code") override val code: Int,
+    @SerialName("Error") override val error: String? = null,
     @SerialName("User") val user: ProtonUser,
-)
+) : ProtonResponse
 
 @Serializable
 data class ProtonUser(
@@ -57,9 +66,10 @@ data class ProtonUser(
 // Labels — GET /core/v4/labels?Type=1 (folders) and ?Type=2 (labels)
 @Serializable
 data class ProtonLabelsResponse(
-    @SerialName("Code") val code: Int,
-    @SerialName("Labels") val labels: List<ProtonLabel>,
-)
+    @SerialName("Code") override val code: Int,
+    @SerialName("Error") override val error: String? = null,
+    @SerialName("Labels") val labels: List<ProtonLabel> = emptyList(),
+) : ProtonResponse
 
 @Serializable
 data class ProtonLabel(
@@ -80,18 +90,20 @@ data class RefreshRequest(
 
 @Serializable
 data class RefreshResponse(
-    @SerialName("Code") val code: Int,
-    @SerialName("AccessToken") val accessToken: String,
-    @SerialName("RefreshToken") val refreshToken: String,
-)
+    @SerialName("Code") override val code: Int,
+    @SerialName("Error") override val error: String? = null,
+    @SerialName("AccessToken") val accessToken: String = "",
+    @SerialName("RefreshToken") val refreshToken: String = "",
+) : ProtonResponse
 
 // Conversations — GET /mail/v4/conversations?LabelID=X&Page=N
 @Serializable
 data class ProtonConversationsResponse(
-    @SerialName("Code") val code: Int,
-    @SerialName("Total") val total: Int,
-    @SerialName("Conversations") val conversations: List<ProtonConversation>,
-)
+    @SerialName("Code") override val code: Int,
+    @SerialName("Error") override val error: String? = null,
+    @SerialName("Total") val total: Int = 0,
+    @SerialName("Conversations") val conversations: List<ProtonConversation> = emptyList(),
+) : ProtonResponse
 
 @Serializable
 data class ProtonConversation(
@@ -121,10 +133,11 @@ data class ProtonEmailAddress(
 // Messages — GET /mail/v4/messages?ConversationID=X or GET /mail/v4/messages/ID
 @Serializable
 data class ProtonMessagesResponse(
-    @SerialName("Code") val code: Int,
-    @SerialName("Total") val total: Int,
-    @SerialName("Messages") val messages: List<ProtonMessageSummary>,
-)
+    @SerialName("Code") override val code: Int,
+    @SerialName("Error") override val error: String? = null,
+    @SerialName("Total") val total: Int = 0,
+    @SerialName("Messages") val messages: List<ProtonMessageSummary> = emptyList(),
+) : ProtonResponse
 
 @Serializable
 data class ProtonMessageSummary(
@@ -148,9 +161,10 @@ data class ProtonMessageSummary(
 // Full message — GET /mail/v4/messages/{id}
 @Serializable
 data class ProtonMessageResponse(
-    @SerialName("Code") val code: Int,
+    @SerialName("Code") override val code: Int,
+    @SerialName("Error") override val error: String? = null,
     @SerialName("Message") val message: ProtonMessageDetail,
-)
+) : ProtonResponse
 
 @Serializable
 data class ProtonMessageDetail(
@@ -183,12 +197,13 @@ data class ProtonAttachment(
 // Event loop — GET /core/v4/events/{eventId}
 @Serializable
 data class ProtonEventResponse(
-    @SerialName("Code") val code: Int,
-    @SerialName("EventID") val eventId: String,
+    @SerialName("Code") override val code: Int,
+    @SerialName("Error") override val error: String? = null,
+    @SerialName("EventID") val eventId: String = "",
     @SerialName("More") val more: Int = 0,
     @SerialName("Messages") val messages: List<ProtonEventMessage>? = null,
     @SerialName("Conversations") val conversations: List<ProtonEventConversation>? = null,
-)
+) : ProtonResponse
 
 @Serializable
 data class ProtonEventMessage(
@@ -223,9 +238,10 @@ data class ProtonDraftBody(
 
 @Serializable
 data class ProtonDraftResponse(
-    @SerialName("Code") val code: Int,
+    @SerialName("Code") override val code: Int,
+    @SerialName("Error") override val error: String? = null,
     @SerialName("Message") val message: ProtonMessageDetail,
-)
+) : ProtonResponse
 
 // Send — POST /mail/v4/messages/{draftId}
 @Serializable
@@ -263,16 +279,25 @@ data class ProtonLabelMessagesRequest(
 // Initial event ID — GET /core/v4/events/latest
 @Serializable
 data class ProtonLatestEventResponse(
-    @SerialName("Code") val code: Int,
-    @SerialName("EventID") val eventId: String,
-)
+    @SerialName("Code") override val code: Int,
+    @SerialName("Error") override val error: String? = null,
+    @SerialName("EventID") val eventId: String = "",
+) : ProtonResponse
 
 // User keys — GET /core/v4/keys/user (needed to find the private key for decryption)
 @Serializable
 data class ProtonUserKeysResponse(
-    @SerialName("Code") val code: Int,
-    @SerialName("Keys") val keys: List<ProtonUserKey>,
-)
+    @SerialName("Code") override val code: Int,
+    @SerialName("Error") override val error: String? = null,
+    @SerialName("Keys") val keys: List<ProtonUserKey> = emptyList(),
+) : ProtonResponse
+
+// Generic status response for endpoints that return only Code (mark read, delete, etc.)
+@Serializable
+data class ProtonStatusResponse(
+    @SerialName("Code") override val code: Int,
+    @SerialName("Error") override val error: String? = null,
+) : ProtonResponse
 
 @Serializable
 data class ProtonUserKey(

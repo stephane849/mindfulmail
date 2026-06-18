@@ -264,10 +264,10 @@ class ProtonMailProvider @Inject constructor(
 
     override suspend fun sync(): Result<SyncResult> =
         runCatching {
-            // Event-loop based sync using Proton's /core/v4/events/{eventId} endpoint.
-            // Fetches the latest event ID on first sync, then processes deltas.
-            val latestEventId = apiClient.getLatestEventId().eventId
-            var currentEventId = latestEventId
+            // Resume from the last known event ID, or fetch the current latest on first sync.
+            var currentEventId = sessionStore.getEventId()
+                ?: apiClient.getLatestEventId().eventId.also { sessionStore.saveEventId(it) }
+
             var newMessages = 0
             var updatedMessages = 0
             var more = true
@@ -287,6 +287,8 @@ class ProtonMailProvider @Inject constructor(
                 more = eventResponse.more == 1
             }
 
+            // Persist the latest event ID so the next sync is incremental
+            sessionStore.saveEventId(currentEventId)
             SyncResult(newMessages = newMessages, updatedMessages = updatedMessages)
         }
 

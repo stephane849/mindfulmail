@@ -17,6 +17,8 @@ import ca.lght.mindfulmail.data.remote.proton.model.ProtonMessageIdsRequest
 import ca.lght.mindfulmail.data.remote.proton.model.ProtonMessageResponse
 import ca.lght.mindfulmail.data.remote.proton.model.ProtonMessagesResponse
 import ca.lght.mindfulmail.data.remote.proton.model.ProtonSendRequest
+import ca.lght.mindfulmail.data.remote.proton.model.ProtonResponse
+import ca.lght.mindfulmail.data.remote.proton.model.ProtonStatusResponse
 import ca.lght.mindfulmail.data.remote.proton.model.ProtonUserKeysResponse
 import ca.lght.mindfulmail.data.remote.proton.model.ProtonUserResponse
 import ca.lght.mindfulmail.data.remote.proton.model.RefreshRequest
@@ -36,10 +38,16 @@ import io.ktor.http.contentType
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Thrown when Proton API authentication fails and cannot be recovered via token refresh.
- */
+/** Thrown when Proton API authentication fails and cannot be recovered via token refresh. */
 class ProtonAuthException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/** Thrown when the Proton API returns a non-1000 Code in the response body. */
+class ProtonApiException(val code: Int, message: String) : Exception("Proton API error $code: $message")
+
+/** Validate that a Proton API response carries Code=1000; throw [ProtonApiException] otherwise. */
+fun <T : ProtonResponse> T.validate(): T = apply {
+    if (code != 1000) throw ProtonApiException(code, error ?: "unknown error")
+}
 
 /**
  * Ktor-based HTTP client wrapper for the Proton Mail REST API.
@@ -67,7 +75,7 @@ class ProtonApiClient @Inject constructor(
         httpClient.post("$baseUrl/auth/info") {
             contentType(ContentType.Application.Json)
             setBody(AuthInfoRequest(username))
-        }.body()
+        }.body<AuthInfoResponse>().validate()
 
     /**
      * Step 2 of SRP auth — POST /auth.
@@ -77,7 +85,7 @@ class ProtonApiClient @Inject constructor(
         httpClient.post("$baseUrl/auth") {
             contentType(ContentType.Application.Json)
             setBody(request)
-        }.body()
+        }.body<AuthResponse>().validate()
 
     /**
      * Refresh the access token using the stored refresh token — POST /auth/refresh.
@@ -93,7 +101,7 @@ class ProtonApiClient @Inject constructor(
             contentType(ContentType.Application.Json)
             header("x-pm-uid", session.uid)
             setBody(RefreshRequest(refreshToken = session.refreshToken))
-        }.body()
+        }.body<RefreshResponse>().validate()
 
         // Persist the new tokens
         sessionStore.saveSession(
@@ -109,7 +117,7 @@ class ProtonApiClient @Inject constructor(
 
     /** GET /core/v4/users — returns the logged-in Proton user's profile. */
     suspend fun getUser(): ProtonUserResponse =
-        authenticatedGet("$baseUrl/core/v4/users")
+        authenticatedGet<ProtonUserResponse>("$baseUrl/core/v4/users").validate()
 
     /**
      * GET /core/v4/labels?Type=[type]
@@ -117,63 +125,68 @@ class ProtonApiClient @Inject constructor(
      * @param type 1 = folders, 2 = user labels, 3 = system labels.
      */
     suspend fun getLabels(type: Int): ProtonLabelsResponse =
-        authenticatedGet("$baseUrl/core/v4/labels") {
+        authenticatedGet<ProtonLabelsResponse>("$baseUrl/core/v4/labels") {
             parameter("Type", type)
-        }
+        }.validate()
 
     // ── Conversations ────────────────────────────────────────────────────────
 
     suspend fun getConversations(labelId: String, page: Int = 0): ProtonConversationsResponse =
-        authenticatedGet("$baseUrl/mail/v4/conversations") {
+        authenticatedGet<ProtonConversationsResponse>("$baseUrl/mail/v4/conversations") {
             parameter("LabelID", labelId)
             parameter("Page", page)
             parameter("PageSize", 50)
-        }
+        }.validate()
 
     // ── Messages ─────────────────────────────────────────────────────────────
 
     suspend fun getMessagesInConversation(conversationId: String): ProtonMessagesResponse =
-        authenticatedGet("$baseUrl/mail/v4/messages") {
+        authenticatedGet<ProtonMessagesResponse>("$baseUrl/mail/v4/messages") {
             parameter("ConversationID", conversationId)
-        }
+        }.validate()
 
     suspend fun getMessageDetail(messageId: String): ProtonMessageResponse =
-        authenticatedGet("$baseUrl/mail/v4/messages/$messageId")
+        authenticatedGet<ProtonMessageResponse>("$baseUrl/mail/v4/messages/$messageId").validate()
 
     // ── Event loop ───────────────────────────────────────────────────────────
 
     suspend fun getLatestEventId(): ProtonLatestEventResponse =
-        authenticatedGet("$baseUrl/core/v4/events/latest")
+        authenticatedGet<ProtonLatestEventResponse>("$baseUrl/core/v4/events/latest").validate()
 
     suspend fun getEvents(eventId: String): ProtonEventResponse =
-        authenticatedGet("$baseUrl/core/v4/events/$eventId")
+        authenticatedGet<ProtonEventResponse>("$baseUrl/core/v4/events/$eventId").validate()
 
     // ── Keys ─────────────────────────────────────────────────────────────────
 
     suspend fun getUserKeys(): ProtonUserKeysResponse =
-        authenticatedGet("$baseUrl/core/v4/keys/user")
+        authenticatedGet<ProtonUserKeysResponse>("$baseUrl/core/v4/keys/user").validate()
 
     // ── Actions ──────────────────────────────────────────────────────────────
 
-    suspend fun markMessagesRead(ids: List<String>): Unit =
-        authenticatedPut("$baseUrl/mail/v4/messages/read", ProtonMessageIdsRequest(ids))
+    suspend fun markMessagesRead(ids: List<String>) {
+        authenticatedPut<ProtonStatusResponse>("$baseUrl/mail/v4/messages/read", ProtonMessageIdsRequest(ids)).validate()
+    }
 
-    suspend fun markMessagesUnread(ids: List<String>): Unit =
-        authenticatedPut("$baseUrl/mail/v4/messages/unread", ProtonMessageIdsRequest(ids))
+    suspend fun markMessagesUnread(ids: List<String>) {
+        authenticatedPut<ProtonStatusResponse>("$baseUrl/mail/v4/messages/unread", ProtonMessageIdsRequest(ids)).validate()
+    }
 
-    suspend fun labelMessages(labelId: String, ids: List<String>): Unit =
-        authenticatedPut("$baseUrl/mail/v4/messages/label", ProtonLabelMessagesRequest(labelId, ids))
+    suspend fun labelMessages(labelId: String, ids: List<String>) {
+        authenticatedPut<ProtonStatusResponse>("$baseUrl/mail/v4/messages/label", ProtonLabelMessagesRequest(labelId, ids)).validate()
+    }
 
-    suspend fun deleteMessages(ids: List<String>): Unit =
-        authenticatedPut("$baseUrl/mail/v4/messages/delete", ProtonMessageIdsRequest(ids))
+    suspend fun deleteMessages(ids: List<String>) {
+        authenticatedPut<ProtonStatusResponse>("$baseUrl/mail/v4/messages/delete", ProtonMessageIdsRequest(ids)).validate()
+    }
 
     // ── Draft + send ─────────────────────────────────────────────────────────
 
     suspend fun createDraft(request: ProtonDraftRequest): ProtonDraftResponse =
-        authenticatedPost("$baseUrl/mail/v4/messages", request)
+        authenticatedPost<ProtonDraftResponse>("$baseUrl/mail/v4/messages", request).validate()
 
-    suspend fun sendDraft(draftId: String, request: ProtonSendRequest): Unit =
-        authenticatedPost("$baseUrl/mail/v4/messages/$draftId", request)
+    suspend fun sendDraft(draftId: String, request: ProtonSendRequest) {
+        authenticatedPost<ProtonStatusResponse>("$baseUrl/mail/v4/messages/$draftId", request).validate()
+    }
 
     // ── Private helpers ──────────────────────────────────────────────────────
 
