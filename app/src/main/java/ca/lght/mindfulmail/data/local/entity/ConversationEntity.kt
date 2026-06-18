@@ -3,8 +3,6 @@ package ca.lght.mindfulmail.data.local.entity
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import ca.lght.mindfulmail.domain.model.Conversation
-import ca.lght.mindfulmail.domain.model.EmailAddress
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -21,12 +19,6 @@ data class ConversationEntity(
     val labelIds: String,
     val isStarred: Boolean,
 )
-
-@Serializable
-private data class EmailAddressDto(val name: String?, val address: String)
-
-private fun EmailAddress.toDto() = EmailAddressDto(name, address)
-private fun EmailAddressDto.toDomain() = EmailAddress(name, address)
 
 fun ConversationEntity.toConversation(): Conversation {
     val json = Json { ignoreUnknownKeys = true }

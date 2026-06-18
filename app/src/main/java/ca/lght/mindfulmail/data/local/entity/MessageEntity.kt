@@ -2,10 +2,7 @@ package ca.lght.mindfulmail.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import ca.lght.mindfulmail.domain.model.Attachment
-import ca.lght.mindfulmail.domain.model.EmailAddress
 import ca.lght.mindfulmail.domain.model.Message
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -31,23 +28,6 @@ data class MessageEntity(
     val attachmentsJson: String,
     val isEncrypted: Boolean,
 )
-
-@Serializable
-private data class EmailAddressDto(val name: String?, val address: String)
-
-@Serializable
-private data class AttachmentDto(
-    val id: String,
-    val name: String,
-    val mimeType: String,
-    val size: Long,
-    val isEncrypted: Boolean,
-)
-
-private fun EmailAddress.toDto() = EmailAddressDto(name, address)
-private fun EmailAddressDto.toDomain() = EmailAddress(name, address)
-private fun Attachment.toDto() = AttachmentDto(id, name, mimeType, size, isEncrypted)
-private fun AttachmentDto.toDomain() = Attachment(id, name, mimeType, size, isEncrypted)
 
 fun MessageEntity.toMessage(): Message {
     val json = Json { ignoreUnknownKeys = true }
