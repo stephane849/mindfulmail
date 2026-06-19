@@ -67,14 +67,14 @@ jobs:
             echo "Updating existing Appetize app ($APPETIZE_PUBLIC_KEY)..."
             RESPONSE=$(curl -sf \
               -X POST "https://api.appetize.io/v1/apps/$APPETIZE_PUBLIC_KEY" \
-              -H "Authorization: Bearer $APPETIZE_API_TOKEN" \
+              -u "$APPETIZE_API_TOKEN:" \
               -F "file=@$APK_PATH" \
               -F "platform=android")
           else
             echo "Creating new Appetize app..."
             RESPONSE=$(curl -sf \
               -X POST "https://api.appetize.io/v1/apps" \
-              -H "Authorization: Bearer $APPETIZE_API_TOKEN" \
+              -u "$APPETIZE_API_TOKEN:" \
               -F "file=@$APK_PATH" \
               -F "platform=android")
           fi
