@@ -94,7 +94,13 @@ object ProtonSrp {
                 // bcrypt-base64 chars. Pad to 16 with zero bytes (copyOf zero-fills).
                 val saltPadded = if (salt.size < 16) salt.copyOf(16) else salt
                 val bcryptSalt = "\$2a\$10\$${bcryptBase64Encode(saltPadded).take(22)}"
-                BCrypt.hashpw(password, bcryptSalt).toByteArray(Charsets.UTF_8)
+                // jbcrypt only accepts $2a$ as input but outputs "$2a$10$...".
+                // Proton's reference uses $2y$, so its output starts with "$2y$10$...".
+                // The full output string is used as bytes in SHA-512 for x, so the
+                // version char difference matters — replace $2a$ with $2y$ in the output.
+                BCrypt.hashpw(password, bcryptSalt)
+                    .replaceFirst("\$2a\$", "\$2y\$")
+                    .toByteArray(Charsets.UTF_8)
             }
             else -> throw IllegalArgumentException("Unsupported SRP auth version: $version")
         }
