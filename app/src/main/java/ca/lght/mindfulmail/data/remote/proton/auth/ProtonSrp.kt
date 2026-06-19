@@ -103,9 +103,10 @@ object ProtonSrp {
         when (version) {
             0 -> sha512(password.toByteArray(Charsets.UTF_8))
             3, 4 -> {
-                // Proton derives the bcrypt salt by BCrypt-base64 encoding the server salt,
-                // taking the first 22 chars, and prepending the $2y$10$ cost prefix.
-                val bcryptSalt = "\$2a\$10\$${bcryptBase64Encode(salt).take(22)}"
+                // Proton's SRP salt is 10 bytes; bcrypt needs 16 bytes to produce 22
+                // bcrypt-base64 chars. Pad to 16 with zero bytes (copyOf zero-fills).
+                val saltPadded = if (salt.size < 16) salt.copyOf(16) else salt
+                val bcryptSalt = "\$2a\$10\$${bcryptBase64Encode(saltPadded).take(22)}"
                 BCrypt.hashpw(password, bcryptSalt).toByteArray(Charsets.UTF_8)
             }
             else -> throw IllegalArgumentException("Unsupported SRP auth version: $version")
