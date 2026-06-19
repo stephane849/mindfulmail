@@ -44,7 +44,7 @@ fun LoginScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(1) }
 
     LaunchedEffect(uiState) {
         when (val state = uiState) {
@@ -70,7 +70,7 @@ fun LoginScreen(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("ProtonMail") },
+                    text = { Text("ProtonMail (coming soon)") },
                 )
                 Tab(
                     selected = selectedTab == 1,
